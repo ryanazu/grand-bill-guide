@@ -4,33 +4,46 @@ import { Header } from '@/components/layout/Header';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { InvoiceTable } from '@/components/dashboard/InvoiceTable';
 import { InvoiceDetail } from '@/components/dashboard/InvoiceDetail';
+import { UploadInvoiceButton } from '@/components/dashboard/UploadInvoiceButton';
+import { ImportReviewDialog } from '@/components/dashboard/ImportReviewDialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { mockInvoices } from '@/data/mockInvoices';
 import { Invoice } from '@/types/invoice';
+import { ParseResult } from '@/utils/csvParser';
+import { toast } from '@/hooks/use-toast';
 
 export default function Dashboard() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [importedInvoices, setImportedInvoices] = useState<Invoice[]>([]);
+  const [parseResult, setParseResult] = useState<ParseResult | null>(null);
 
+  const allInvoices = useMemo(() => [...mockInvoices, ...importedInvoices], [importedInvoices]);
   const stats = useMemo(() => {
-    const total = mockInvoices.length;
-    const totalRevenue = mockInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
-    const pending = mockInvoices.filter(inv => inv.status === 'pending').length;
-    const overdue = mockInvoices.filter(inv => inv.status === 'overdue').length;
+    const total = allInvoices.length;
+    const totalRevenue = allInvoices.reduce((sum, inv) => sum + inv.totalAmount, 0);
+    const pending = allInvoices.filter(inv => inv.status === 'pending').length;
+    const overdue = allInvoices.filter(inv => inv.status === 'overdue').length;
 
     return { total, totalRevenue, pending, overdue };
-  }, []);
+  }, [allInvoices]);
 
   const filteredInvoices = useMemo(() => {
-    if (!searchQuery.trim()) return mockInvoices;
+    if (!searchQuery.trim()) return allInvoices;
     const query = searchQuery.toLowerCase();
-    return mockInvoices.filter(inv =>
+    return allInvoices.filter(inv =>
       inv.invoiceNumber.toLowerCase().includes(query) ||
       inv.hotelName.toLowerCase().includes(query) ||
       inv.guests.some(g => g.name.toLowerCase().includes(query))
     );
-  }, [searchQuery]);
+  }, [searchQuery, allInvoices]);
+
+  const handleImportConfirm = (invoices: Invoice[]) => {
+    setImportedInvoices(prev => [...prev, ...invoices]);
+    setParseResult(null);
+    toast({ title: 'Import successful', description: `${invoices.length} invoice${invoices.length !== 1 ? 's' : ''} imported.` });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -101,6 +114,10 @@ export default function Dashboard() {
               <Button variant="outline" size="icon">
                 <Filter className="h-4 w-4" />
               </Button>
+              <UploadInvoiceButton
+                existingInvoices={allInvoices}
+                onParseComplete={setParseResult}
+              />
             </div>
           </div>
 
@@ -116,6 +133,14 @@ export default function Dashboard() {
         <InvoiceDetail 
           invoice={selectedInvoice} 
           onClose={() => setSelectedInvoice(null)} 
+        />
+      )}
+
+      {parseResult && (
+        <ImportReviewDialog
+          result={parseResult}
+          onConfirm={handleImportConfirm}
+          onCancel={() => setParseResult(null)}
         />
       )}
     </div>
