@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { AlertTriangle, CheckCircle, Copy, Trash2, X, Edit2, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Copy, Trash2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ParsedInvoice, ParseResult } from '@/utils/csvParser';
 import { Invoice } from '@/types/invoice';
+import { US_STATES, isValidDisasterId } from '@/constants/usStates';
 
 interface ImportReviewDialogProps {
   result: ParseResult;
@@ -14,8 +17,10 @@ interface ImportReviewDialogProps {
 
 export function ImportReviewDialog({ result, onConfirm, onCancel }: ImportReviewDialogProps) {
   const [entries, setEntries] = useState<ParsedInvoice[]>(result.invoices);
-  const [editingCell, setEditingCell] = useState<{ row: number; field: string } | null>(null);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [importDisasterId, setImportDisasterId] = useState('');
+  const [importState, setImportState] = useState('');
+  const [disasterIdError, setDisasterIdError] = useState('');
 
   const removeEntry = (index: number) => {
     setEntries(prev => prev.filter((_, i) => i !== index));
@@ -25,7 +30,6 @@ export function ImportReviewDialog({ result, onConfirm, onCancel }: ImportReview
     setEntries(prev => prev.map((entry, i) => {
       if (i !== index) return entry;
       const updated = { ...entry, invoice: { ...entry.invoice, [field]: field === 'roomRate' || field === 'taxes' || field === 'additionalCharges' || field === 'totalAmount' ? parseFloat(value) || 0 : value } };
-      // Recalculate issues
       const newIssues = entry.issues.filter(issue => issue.field !== field);
       return { ...updated, issues: newIssues };
     }));
@@ -34,10 +38,34 @@ export function ImportReviewDialog({ result, onConfirm, onCancel }: ImportReview
   const cleanEntries = entries.filter(e => e.issues.length === 0);
   const errorEntries = entries.filter(e => e.issues.length > 0);
 
+  const canConfirm = entries.length > 0 && isValidDisasterId(importDisasterId) && importState !== '';
+
   const handleConfirm = () => {
+    if (!isValidDisasterId(importDisasterId)) {
+      setDisasterIdError('Valid Disaster ID required (e.g., 123-25)');
+      return;
+    }
+    if (!importState) return;
+
     const validInvoices = entries
       .filter(e => e.issues.filter(i => i.type !== 'missing' || e.invoice[i.field as keyof typeof e.invoice]).length === 0 || e.issues.length === 0)
-      .map(e => e.invoice as Invoice);
+      .map(e => ({
+        ...e.invoice,
+        disasterId: importDisasterId,
+        state: importState,
+        lineItems: e.invoice.lineItems || [],
+        nights: 1,
+        roomSubtotal: e.invoice.roomRate || 0,
+        taxSubtotal: e.invoice.taxes || 0,
+        feesSubtotal: e.invoice.additionalCharges || 0,
+        adjustmentsSubtotal: 0,
+        grossTotal: e.invoice.totalAmount || 0,
+        netTotal: e.invoice.totalAmount || 0,
+        ratePerNight: e.invoice.roomRate || 0,
+        flags: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as Invoice));
     onConfirm(validInvoices);
   };
 
@@ -59,6 +87,39 @@ export function ImportReviewDialog({ result, onConfirm, onCancel }: ImportReview
           <Button variant="ghost" size="icon" onClick={onCancel}>
             <X className="h-5 w-5" />
           </Button>
+        </div>
+
+        {/* Disaster ID & State Selection */}
+        <div className="px-6 py-3 border-b border-border bg-primary/5">
+          <p className="text-xs font-medium text-muted-foreground mb-2">Apply to all imported records:</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Disaster ID *</Label>
+              <Input
+                value={importDisasterId}
+                onChange={e => {
+                  setImportDisasterId(e.target.value);
+                  setDisasterIdError(e.target.value && !isValidDisasterId(e.target.value) ? 'Format: 123-25' : '');
+                }}
+                placeholder="123-25"
+                className={`h-8 text-sm ${disasterIdError ? 'border-destructive' : ''}`}
+              />
+              {disasterIdError && <p className="text-[10px] text-destructive">{disasterIdError}</p>}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">State *</Label>
+              <Select value={importState} onValueChange={setImportState}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Select state" />
+                </SelectTrigger>
+                <SelectContent>
+                  {US_STATES.map(s => (
+                    <SelectItem key={s.value} value={s.value}>{s.value} — {s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
 
         {/* Summary Badges */}
@@ -100,7 +161,6 @@ export function ImportReviewDialog({ result, onConfirm, onCancel }: ImportReview
                       hasIssues ? 'border-destructive/30 bg-destructive/5' : 'border-border bg-background'
                     }`}
                   >
-                    {/* Row summary */}
                     <div className="flex items-center gap-3 px-4 py-3">
                       <button
                         onClick={() => setExpandedRow(isExpanded ? null : index)}
@@ -148,7 +208,6 @@ export function ImportReviewDialog({ result, onConfirm, onCancel }: ImportReview
                       </Button>
                     </div>
 
-                    {/* Expanded edit view */}
                     {isExpanded && (
                       <div className="px-4 pb-4 pt-1 border-t border-border/50">
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -196,16 +255,18 @@ export function ImportReviewDialog({ result, onConfirm, onCancel }: ImportReview
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-muted/20">
           <p className="text-xs text-muted-foreground">
-            {errorEntries.length > 0
-              ? 'Expand rows to fix issues, or remove them before importing.'
-              : 'All entries look good!'}
+            {!importDisasterId || !importState
+              ? 'Set Disaster ID and State above before importing.'
+              : errorEntries.length > 0
+                ? 'Expand rows to fix issues, or remove them before importing.'
+                : 'All entries look good!'}
           </p>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onCancel}>Cancel</Button>
             <Button
               variant="accent"
               onClick={handleConfirm}
-              disabled={entries.length === 0}
+              disabled={!canConfirm}
             >
               Import {entries.length} Invoice{entries.length !== 1 ? 's' : ''}
             </Button>
