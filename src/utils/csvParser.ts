@@ -80,6 +80,10 @@ const COLUMN_MAP: Record<string, string> = {
   'submitted': 'submittedAt',
   'submitted at': 'submittedAt',
   'notes': 'notes',
+  'disaster id': 'disasterId',
+  'disaster': 'disasterId',
+  'disasterid': 'disasterId',
+  'state': 'state',
 };
 
 function mapColumnName(header: string): string | null {
@@ -176,7 +180,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
     }
 
     // Validate status
-    const validStatuses = ['pending', 'paid', 'overdue', 'cancelled'];
+    const validStatuses = ['pending', 'paid', 'overdue'];
     if (row.status && !validStatuses.includes(row.status.toLowerCase())) {
       issues.push({ row: i, field: 'status', type: 'invalid', message: `Invalid status: ${row.status}` });
     }
@@ -193,6 +197,8 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
       hotelName: row.hotelName || '',
       hotelId: row.hotelId || '',
       roomNumber: row.roomNumber || '',
+      disasterId: row.disasterId || '',
+      state: row.state || '',
       checkInDate: row.checkInDate || '',
       checkOutDate: row.checkOutDate || '',
       guests: guests.length > 0 ? guests : [{ name: '' }],
