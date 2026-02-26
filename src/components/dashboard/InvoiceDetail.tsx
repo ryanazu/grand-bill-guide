@@ -1,26 +1,29 @@
 import { useState } from 'react';
-import { X, Download, Mail, Calendar, Users, CreditCard, FileText, Eye, EyeOff, AlertTriangle, MapPin, Hash } from 'lucide-react';
+import { X, Download, Mail, Calendar, Users, CreditCard, FileText, Eye, EyeOff, AlertTriangle, MapPin, Hash, Link2, Check, XCircle, Search } from 'lucide-react';
 import { Invoice, InvoiceFlag, InvoiceLineItem, ChargeCategory } from '@/types/invoice';
+import { ClientPortfolio } from '@/types/portfolio';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { format } from 'date-fns';
 import { getStateLabel } from '@/constants/usStates';
 import { detectOffsetPairs } from '@/utils/financialControls';
+import { FLAG_CONFIG, sortFlagsBySeverity, getFlagTooltip } from '@/utils/flagUtils';
 
 interface InvoiceDetailProps {
   invoice: Invoice;
   onClose: () => void;
   maxRatePerNight: number;
+  portfolios: ClientPortfolio[];
+  onLinkPortfolio: (invoiceId: string, portfolioId: string) => void;
+  onConfirmMatch: (invoiceId: string) => void;
+  onRejectMatch: (invoiceId: string) => void;
 }
 
 const statusVariants: Record<Invoice['status'], 'success' | 'pending' | 'destructive'> = {
@@ -29,20 +32,9 @@ const statusVariants: Record<Invoice['status'], 'success' | 'pending' | 'destruc
   overdue: 'destructive',
 };
 
-const flagVariants: Record<InvoiceFlag, { label: string; variant: 'destructive' | 'warning' | 'info' }> = {
-  DUPLICATE_SUSPECTED: { label: 'Duplicate Suspected', variant: 'warning' },
-  OFFSETS_PRESENT: { label: 'Offsets Present', variant: 'info' },
-  OVER_MAX_NIGHTLY_RATE: { label: 'Over Max Nightly Rate', variant: 'destructive' },
-};
-
 const categoryLabels: Record<ChargeCategory, string> = {
-  ROOM: 'Room',
-  TAX: 'Tax',
-  PET: 'Pet',
-  PARKING: 'Parking',
-  OTHER_FEE: 'Other Fee',
-  ADJUSTMENT: 'Adjustment',
-  UNKNOWN: 'Unknown',
+  ROOM: 'Room', TAX: 'Tax', PET: 'Pet', PARKING: 'Parking',
+  OTHER_FEE: 'Other Fee', ADJUSTMENT: 'Adjustment', UNKNOWN: 'Unknown',
 };
 
 const categoryColors: Record<ChargeCategory, string> = {
@@ -55,25 +47,34 @@ const categoryColors: Record<ChargeCategory, string> = {
   UNKNOWN: 'bg-muted text-muted-foreground',
 };
 
-export function InvoiceDetail({ invoice, onClose, maxRatePerNight }: InvoiceDetailProps) {
+export function InvoiceDetail({ invoice, onClose, maxRatePerNight, portfolios, onLinkPortfolio, onConfirmMatch, onRejectMatch }: InvoiceDetailProps) {
   const [hideOffsets, setHideOffsets] = useState(true);
+  const [showLinkSearch, setShowLinkSearch] = useState(false);
+  const [linkSearch, setLinkSearch] = useState('');
 
   const offsetPairs = detectOffsetPairs(invoice.lineItems);
   const offsetIds = new Set(offsetPairs.flatMap(p => [p.positive.id, p.negative.id]));
-
-  const visibleLineItems = hideOffsets
-    ? invoice.lineItems.filter(li => !offsetIds.has(li.id))
-    : invoice.lineItems;
-
+  const visibleLineItems = hideOffsets ? invoice.lineItems.filter(li => !offsetIds.has(li.id)) : invoice.lineItems;
   const isOverRate = invoice.ratePerNight > maxRatePerNight && invoice.ratePerNight > 0;
+  const linkedPortfolio = invoice.portfolioId ? portfolios.find(p => p.portfolioId === invoice.portfolioId) : null;
+  const sortedFlags = sortFlagsBySeverity(invoice.flags);
+
+  const filteredPortfolios = linkSearch.trim()
+    ? portfolios.filter(p => {
+        const q = linkSearch.toLowerCase();
+        return p.primaryGuestName.toLowerCase().includes(q) ||
+          p.portfolioId.toLowerCase().includes(q) ||
+          (p.clientId && p.clientId.toLowerCase().includes(q)) ||
+          (p.caseId && p.caseId.toLowerCase().includes(q)) ||
+          (p.bookingReference && p.bookingReference.toLowerCase().includes(q)) ||
+          p.disasterId.includes(q);
+      })
+    : portfolios.slice(0, 10);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 backdrop-blur-sm animate-fade-in">
       <div className="relative w-full max-w-4xl max-h-[90vh] overflow-auto rounded-2xl border border-border bg-card p-8 shadow-2xl animate-scale-in">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-lg hover:bg-muted transition-colors"
-        >
+        <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-lg hover:bg-muted transition-colors">
           <X className="h-5 w-5 text-muted-foreground" />
         </button>
 
@@ -88,13 +89,107 @@ export function InvoiceDetail({ invoice, onClose, maxRatePerNight }: InvoiceDeta
               <Badge variant={statusVariants[invoice.status]} className="text-sm px-3 py-1">
                 {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
               </Badge>
-              {invoice.flags.map(flag => (
-                <Badge key={flag} variant={flagVariants[flag].variant} className="text-sm px-3 py-1">
-                  {flagVariants[flag].label}
+              {invoice.portfolioMatchStatus && (
+                <Badge variant={invoice.portfolioMatchStatus === 'MATCHED' ? 'success' : invoice.portfolioMatchStatus === 'POSSIBLE_MATCH' ? 'warning' : 'secondary'} className="text-sm px-3 py-1">
+                  {invoice.portfolioMatchStatus === 'MATCHED' ? 'Linked' : invoice.portfolioMatchStatus === 'POSSIBLE_MATCH' ? 'Possible Match' : 'Unmatched'}
                 </Badge>
-              ))}
+              )}
             </div>
           </div>
+
+          {/* Portfolio Section */}
+          <div className="rounded-xl border border-border p-4 space-y-3">
+            <h3 className="font-display text-sm font-semibold text-foreground flex items-center gap-2">
+              <Link2 className="h-4 w-4" /> Portfolio Pairing
+            </h3>
+            {invoice.portfolioMatchStatus === 'MATCHED' && linkedPortfolio ? (
+              <div className="rounded-lg bg-success/5 border border-success/20 p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{linkedPortfolio.primaryGuestName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {linkedPortfolio.portfolioId} · {linkedPortfolio.disasterId} · {linkedPortfolio.state}
+                      {invoice.portfolioMatchMethod && ` · via ${invoice.portfolioMatchMethod.replace(/_/g, ' ')}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Authorized: {format(new Date(linkedPortfolio.authorizedCheckInDate), 'MMM dd')} — {format(new Date(linkedPortfolio.authorizedCheckOutDate), 'MMM dd, yyyy')}
+                      {linkedPortfolio.maxRatePerNight && ` · Max $${linkedPortfolio.maxRatePerNight}/night`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : invoice.portfolioMatchStatus === 'POSSIBLE_MATCH' && linkedPortfolio ? (
+              <div className="rounded-lg bg-warning/5 border border-warning/20 p-3">
+                <p className="text-sm font-medium text-foreground">Suggested: {linkedPortfolio.primaryGuestName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {linkedPortfolio.portfolioId} · Matched via {invoice.portfolioMatchMethod?.replace(/_/g, ' ')}
+                </p>
+                <div className="flex gap-2 mt-2">
+                  <Button size="sm" variant="default" onClick={() => onConfirmMatch(invoice.id)}>
+                    <Check className="h-3 w-3 mr-1" /> Confirm Link
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => onRejectMatch(invoice.id)}>
+                    <XCircle className="h-3 w-3 mr-1" /> Reject
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">No portfolio linked.</p>
+                {!showLinkSearch ? (
+                  <Button size="sm" variant="outline" onClick={() => setShowLinkSearch(true)}>
+                    <Link2 className="h-3 w-3 mr-1" /> Link to Portfolio
+                  </Button>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        value={linkSearch}
+                        onChange={e => setLinkSearch(e.target.value)}
+                        placeholder="Search by name, ID, booking ref..."
+                        className="h-8 text-xs pl-8"
+                      />
+                    </div>
+                    <div className="max-h-40 overflow-auto space-y-1">
+                      {filteredPortfolios.map(p => (
+                        <button
+                          key={p.portfolioId}
+                          className="w-full text-left rounded-lg border border-border p-2 hover:bg-muted/50 transition-colors"
+                          onClick={() => { onLinkPortfolio(invoice.id, p.portfolioId); setShowLinkSearch(false); }}
+                        >
+                          <p className="text-xs font-medium text-foreground">{p.primaryGuestName}</p>
+                          <p className="text-[10px] text-muted-foreground">{p.portfolioId} · {p.disasterId} · {p.state}</p>
+                        </button>
+                      ))}
+                      {filteredPortfolios.length === 0 && (
+                        <p className="text-xs text-muted-foreground text-center py-3">No portfolios found</p>
+                      )}
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={() => setShowLinkSearch(false)}>Cancel</Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Flags */}
+          {sortedFlags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {sortedFlags.map(flag => (
+                <Tooltip key={flag}>
+                  <TooltipTrigger asChild>
+                    <span className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-semibold ${FLAG_CONFIG[flag].bgClass}`}>
+                      {FLAG_CONFIG[flag].shortLabel}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="text-xs max-w-xs">
+                    {getFlagTooltip(flag, invoice.flagDetails)}
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          )}
 
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -145,14 +240,8 @@ export function InvoiceDetail({ invoice, onClose, maxRatePerNight }: InvoiceDeta
               <h3 className="font-display text-lg font-semibold text-foreground">Charges Breakdown</h3>
               {offsetPairs.length > 0 && (
                 <div className="flex items-center gap-2">
-                  <Switch
-                    id="hide-offsets"
-                    checked={hideOffsets}
-                    onCheckedChange={setHideOffsets}
-                  />
-                  <Label htmlFor="hide-offsets" className="text-sm text-muted-foreground">
-                    Hide offset pairs (net $0)
-                  </Label>
+                  <Switch id="hide-offsets" checked={hideOffsets} onCheckedChange={setHideOffsets} />
+                  <Label htmlFor="hide-offsets" className="text-sm text-muted-foreground">Hide offset pairs (net $0)</Label>
                 </div>
               )}
             </div>
@@ -193,7 +282,6 @@ export function InvoiceDetail({ invoice, onClose, maxRatePerNight }: InvoiceDeta
               </Table>
             </div>
 
-            {/* Offset Pairs Section */}
             {hideOffsets && offsetPairs.length > 0 && (
               <div className="mt-4">
                 <h4 className="text-sm font-medium text-muted-foreground mb-2">
@@ -243,12 +331,10 @@ export function InvoiceDetail({ invoice, onClose, maxRatePerNight }: InvoiceDeta
           {/* Actions */}
           <div className="flex gap-3 pt-4 border-t border-border">
             <Button variant="accent" className="flex-1">
-              <Download className="h-4 w-4 mr-2" />
-              Download PDF
+              <Download className="h-4 w-4 mr-2" /> Download PDF
             </Button>
             <Button variant="outline" className="flex-1">
-              <Mail className="h-4 w-4 mr-2" />
-              Send to Email
+              <Mail className="h-4 w-4 mr-2" /> Send to Email
             </Button>
           </div>
         </div>

@@ -1,3 +1,5 @@
+import { PortfolioMatchStatus, PortfolioMatchMethod } from './portfolio';
+
 export interface Guest {
   name: string;
   email?: string;
@@ -7,7 +9,21 @@ export interface Guest {
 export type ChargeCategory = 'ROOM' | 'TAX' | 'PET' | 'PARKING' | 'OTHER_FEE' | 'ADJUSTMENT' | 'UNKNOWN';
 export type LineItemType = 'Charge' | 'Tax' | 'Adjustment';
 export type InvoiceStatus = 'pending' | 'paid' | 'overdue';
-export type InvoiceFlag = 'DUPLICATE_SUSPECTED' | 'OFFSETS_PRESENT' | 'OVER_MAX_NIGHTLY_RATE';
+export type InvoiceFlag =
+  | 'DUPLICATE_SUSPECTED'
+  | 'OFFSETS_PRESENT'
+  | 'OVER_MAX_NIGHTLY_RATE'
+  | 'OVER_AUTHORIZED_NIGHTS'
+  | 'OVER_MAX_RATE_PORTFOLIO'
+  | 'ROOM_TYPE_MISMATCH'
+  | 'DISALLOWED_CHARGE_CATEGORY'
+  | 'TOTAL_ASSISTANCE_CAP_EXCEEDED';
+
+export interface InvoiceFlagDetail {
+  flag: InvoiceFlag;
+  severity: 'critical' | 'review' | 'info';
+  tooltip: string;
+}
 
 export interface InvoiceLineItem {
   id: string;
@@ -60,7 +76,7 @@ export interface Invoice {
   netTotal: number;
   ratePerNight: number;
 
-  // Legacy fields (for backwards compat with old data)
+  // Legacy fields
   roomRate: number;
   taxes: number;
   additionalCharges: number;
@@ -68,6 +84,16 @@ export interface Invoice {
 
   // Flags
   flags: InvoiceFlag[];
+  flagDetails?: InvoiceFlagDetail[];
+
+  // Portfolio pairing
+  portfolioId?: string | null;
+  portfolioMatchStatus?: PortfolioMatchStatus;
+  portfolioMatchMethod?: PortfolioMatchMethod;
+
+  // Optional fields for matching
+  clientId?: string;
+  caseId?: string;
 }
 
 export interface InvoiceFormData {
