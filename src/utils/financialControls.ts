@@ -1,4 +1,4 @@
-import { Invoice, InvoiceLineItem, InvoiceFlag, ChargeCategory, OffsetPair } from '@/types/invoice';
+import { Invoice, InvoiceLineItem, InvoiceFlag, InvoiceFlagDetail, ChargeCategory, OffsetPair } from '@/types/invoice';
 import { differenceInDays } from 'date-fns';
 
 // ─── Category Normalization ─────────────────────────────────────────────────
@@ -133,22 +133,56 @@ function hasGuestOverlap(a: { name: string }[], b: { name: string }[]): boolean 
 export function applyFlags(invoices: Invoice[], maxRatePerNight: number): Invoice[] {
   const duplicateIds = detectDuplicates(invoices);
 
+  // Build duplicate pairs for tooltip text
+  const duplicatePairs: Record<string, string[]> = {};
+  for (let i = 0; i < invoices.length; i++) {
+    for (let j = i + 1; j < invoices.length; j++) {
+      const a = invoices[i];
+      const b = invoices[j];
+      if (duplicateIds.has(a.id) && duplicateIds.has(b.id) &&
+        a.hotelName.toLowerCase() === b.hotelName.toLowerCase() &&
+        a.checkInDate === b.checkInDate && a.checkOutDate === b.checkOutDate) {
+        if (!duplicatePairs[a.id]) duplicatePairs[a.id] = [];
+        if (!duplicatePairs[b.id]) duplicatePairs[b.id] = [];
+        duplicatePairs[a.id].push(b.invoiceNumber);
+        duplicatePairs[b.id].push(a.invoiceNumber);
+      }
+    }
+  }
+
   return invoices.map(inv => {
     const flags: InvoiceFlag[] = [];
+    const flagDetails: InvoiceFlagDetail[] = [];
 
     if (duplicateIds.has(inv.id)) {
       flags.push('DUPLICATE_SUSPECTED');
+      const matches = duplicatePairs[inv.id] || [];
+      flagDetails.push({
+        flag: 'DUPLICATE_SUSPECTED',
+        severity: 'critical',
+        tooltip: `Duplicate match: ${matches.join(', ') || 'detected'}`,
+      });
     }
 
     const offsetPairs = detectOffsetPairs(inv.lineItems);
     if (offsetPairs.length > 0) {
       flags.push('OFFSETS_PRESENT');
+      flagDetails.push({
+        flag: 'OFFSETS_PRESENT',
+        severity: 'info',
+        tooltip: `Offsets: ${offsetPairs.length} pair${offsetPairs.length !== 1 ? 's' : ''} net to $0`,
+      });
     }
 
     if (inv.ratePerNight > maxRatePerNight && inv.ratePerNight > 0) {
       flags.push('OVER_MAX_NIGHTLY_RATE');
+      flagDetails.push({
+        flag: 'OVER_MAX_NIGHTLY_RATE',
+        severity: 'critical',
+        tooltip: `Rate: $${inv.ratePerNight.toFixed(0)} > $${maxRatePerNight}`,
+      });
     }
 
-    return { ...inv, flags };
+    return { ...inv, flags, flagDetails };
   });
 }
