@@ -91,6 +91,12 @@ export default function Dashboard() {
     toast({ title: 'Import successful', description: `${invoices.length} invoice${invoices.length !== 1 ? 's' : ''} imported.` });
   };
 
+  const handleDeleteInvoice = useCallback((invoiceId: string) => {
+    setImportedInvoices(prev => prev.filter(inv => inv.id !== invoiceId));
+    setSelectedInvoice(prev => prev?.id === invoiceId ? null : prev);
+    toast({ title: 'Invoice deleted' });
+  }, []);
+
   const handleAddPortfolio = useCallback((pf: ClientPortfolio) => {
     setPortfolios(prev => [...prev, pf]);
   }, []);
@@ -265,6 +271,7 @@ export default function Dashboard() {
               <InvoiceTable
                 invoices={filteredInvoices}
                 onViewInvoice={setSelectedInvoice}
+                onDeleteInvoice={handleDeleteInvoice}
               />
             </div>
           </>

@@ -49,23 +49,40 @@ export function ImportReviewDialog({ result, onConfirm, onCancel }: ImportReview
 
     const validInvoices = entries
       .filter(e => e.issues.filter(i => i.type !== 'missing' || e.invoice[i.field as keyof typeof e.invoice]).length === 0 || e.issues.length === 0)
-      .map(e => ({
-        ...e.invoice,
-        disasterId: importDisasterId,
-        state: importState,
-        lineItems: e.invoice.lineItems || [],
-        nights: 1,
-        roomSubtotal: e.invoice.roomRate || 0,
-        taxSubtotal: e.invoice.taxes || 0,
-        feesSubtotal: e.invoice.additionalCharges || 0,
-        adjustmentsSubtotal: 0,
-        grossTotal: e.invoice.totalAmount || 0,
-        netTotal: e.invoice.totalAmount || 0,
-        ratePerNight: e.invoice.roomRate || 0,
-        flags: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      } as Invoice));
+      .map(e => {
+        const nights = e.invoice.checkInDate && e.invoice.checkOutDate
+          ? Math.max(Math.round((new Date(e.invoice.checkOutDate).getTime() - new Date(e.invoice.checkInDate).getTime()) / 86400000), 1)
+          : 1;
+        const lineItems = e.invoice.lineItems || [];
+        const roomSubtotal = lineItems.filter(li => li.category === 'ROOM').reduce((s, li) => s + li.amount, 0) || (e.invoice.roomRate || 0);
+        const taxSubtotal = lineItems.filter(li => li.category === 'TAX').reduce((s, li) => s + li.amount, 0) || (e.invoice.taxes || 0);
+        const feesSubtotal = e.invoice.additionalCharges || 0;
+        const grossTotal = roomSubtotal + taxSubtotal + feesSubtotal;
+        const netTotal = grossTotal;
+        const ratePerNight = nights > 0 && roomSubtotal > 0 ? roomSubtotal / nights : 0;
+
+        return {
+          ...e.invoice,
+          disasterId: importDisasterId,
+          state: importState,
+          lineItems,
+          nights,
+          roomSubtotal,
+          taxSubtotal,
+          feesSubtotal,
+          adjustmentsSubtotal: 0,
+          grossTotal,
+          netTotal,
+          ratePerNight,
+          roomRate: e.invoice.roomRate || roomSubtotal,
+          taxes: e.invoice.taxes || taxSubtotal,
+          additionalCharges: feesSubtotal,
+          totalAmount: grossTotal,
+          flags: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        } as Invoice;
+      });
     onConfirm(validInvoices);
   };
 
