@@ -44,10 +44,15 @@ const COLUMN_MAP: Record<string, string> = {
   'checkin': 'checkInDate',
   'check in': 'checkInDate',
   'check-in date': 'checkInDate',
+  'checkindate': 'checkInDate',
+  'check_in': 'checkInDate',
   'check-out': 'checkOutDate',
   'checkout': 'checkOutDate',
   'check out': 'checkOutDate',
   'check-out date': 'checkOutDate',
+  'checkoutdate': 'checkOutDate',
+  'check_out': 'checkOutDate',
+  'type': 'lineType',
   'guest names': 'guestNames',
   'guest name': 'guestNames',
   'guests': 'guestNames',
@@ -139,6 +144,67 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
   const headers = parseCSVLine(lines[0]);
   const mappedHeaders = headers.map(mapColumnName);
 
+  const hasLineType = mappedHeaders.includes('lineType');
+
+  // Parse all rows into raw data
+  const rawRows: { row: ParsedRow; index: number }[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    const row: ParsedRow = {};
+    mappedHeaders.forEach((mapped, idx) => {
+      if (mapped && values[idx]) {
+        row[mapped] = values[idx].replace(/^["']|["']$/g, '');
+      }
+    });
+    rawRows.push({ row, index: i });
+  }
+
+  // If file has a "Type" column (Charge/Tax), aggregate rows by invoice number
+  type AggregatedRow = { row: ParsedRow; indices: number[] };
+  let aggregatedRows: AggregatedRow[];
+
+  if (hasLineType) {
+    const groups = new Map<string, AggregatedRow>();
+    for (const { row, index } of rawRows) {
+      const key = row.invoiceNumber?.toLowerCase() || `row-${index}`;
+      if (!groups.has(key)) {
+        // Start with the first row's data as base
+        groups.set(key, { row: { ...row }, indices: [index] });
+      } else {
+        const group = groups.get(key)!;
+        group.indices.push(index);
+        // Merge: fill in any missing fields from subsequent rows
+        for (const [k, v] of Object.entries(row)) {
+          if (k === 'lineType' || k === 'roomRate') continue; // handle separately
+          if (!group.row[k] && v) group.row[k] = v;
+        }
+      }
+
+      const lineType = (row.lineType || '').toLowerCase().trim();
+      const amount = parseFloat(row.roomRate) || 0;
+      const group = groups.get(key)!;
+
+      if (lineType === 'tax') {
+        group.row._taxTotal = String((parseFloat(group.row._taxTotal || '0')) + amount);
+      } else {
+        // "Charge" or any other type → roomRate
+        group.row._chargeTotal = String((parseFloat(group.row._chargeTotal || '0')) + amount);
+      }
+    }
+
+    // Finalize aggregated rows
+    aggregatedRows = Array.from(groups.values()).map(g => {
+      g.row.roomRate = g.row._chargeTotal || '0';
+      g.row.taxes = g.row._taxTotal || '0';
+      delete g.row._chargeTotal;
+      delete g.row._taxTotal;
+      delete g.row.lineType;
+      return g;
+    });
+  } else {
+    aggregatedRows = rawRows.map(r => ({ row: r.row, indices: [r.index] }));
+  }
+
   const existingNumbers = new Set(existingInvoices.map(inv => inv.invoiceNumber.toLowerCase()));
   const seenNumbers = new Set<string>();
 
@@ -147,21 +213,14 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
   let duplicates = 0;
   let missingFields = 0;
 
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseCSVLine(lines[i]);
-    const row: ParsedRow = {};
+  for (const { row, indices } of aggregatedRows) {
     const issues: ValidationIssue[] = [];
-
-    mappedHeaders.forEach((mapped, idx) => {
-      if (mapped && values[idx]) {
-        row[mapped] = values[idx].replace(/^["']|["']$/g, '');
-      }
-    });
+    const rowDisplay = indices[0];
 
     // Check required fields
     for (const field of REQUIRED_FIELDS) {
       if (!row[field] || row[field].trim() === '') {
-        issues.push({ row: i, field, type: 'missing', message: `Missing ${field}` });
+        issues.push({ row: rowDisplay, field, type: 'missing', message: `Missing ${field}` });
         missingFields++;
       }
     }
@@ -170,10 +229,10 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
     const invNum = row.invoiceNumber?.toLowerCase();
     if (invNum) {
       if (existingNumbers.has(invNum)) {
-        issues.push({ row: i, field: 'invoiceNumber', type: 'duplicate', message: 'Invoice already exists' });
+        issues.push({ row: rowDisplay, field: 'invoiceNumber', type: 'duplicate', message: 'Invoice already exists' });
         duplicates++;
       } else if (seenNumbers.has(invNum)) {
-        issues.push({ row: i, field: 'invoiceNumber', type: 'duplicate', message: 'Duplicate in file' });
+        issues.push({ row: rowDisplay, field: 'invoiceNumber', type: 'duplicate', message: 'Duplicate in file' });
         duplicates++;
       }
       seenNumbers.add(invNum);
@@ -182,7 +241,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
     // Validate status
     const validStatuses = ['pending', 'paid', 'overdue'];
     if (row.status && !validStatuses.includes(row.status.toLowerCase())) {
-      issues.push({ row: i, field: 'status', type: 'invalid', message: `Invalid status: ${row.status}` });
+      issues.push({ row: rowDisplay, field: 'status', type: 'invalid', message: `Invalid status: ${row.status}` });
     }
 
     const guests = parseGuests(row.guestNames || '', row.guestEmails, row.guestPhones);
@@ -192,7 +251,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
     const totalAmount = row.totalAmount ? parseFloat(row.totalAmount) : roomRate + taxes + additionalCharges;
 
     const invoice: Partial<Invoice> = {
-      id: `import-${Date.now()}-${i}`,
+      id: `import-${Date.now()}-${rowDisplay}`,
       invoiceNumber: row.invoiceNumber || '',
       hotelName: row.hotelName || '',
       hotelId: row.hotelId || '',
@@ -215,7 +274,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
     };
 
     totalIssues += issues.length;
-    invoices.push({ invoice, rowIndex: i, issues });
+    invoices.push({ invoice, rowIndex: rowDisplay, issues });
   }
 
   return { invoices, totalIssues, duplicates, missingFields };
