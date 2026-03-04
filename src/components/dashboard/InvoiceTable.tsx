@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Eye, MoreHorizontal } from 'lucide-react';
+import { Eye, MoreHorizontal, Trash2 } from 'lucide-react';
 import { Invoice, InvoiceFlag } from '@/types/invoice';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { FLAG_CONFIG, sortFlagsBySeverity, getFlagTooltip } from '@/utils/flagUt
 interface InvoiceTableProps {
   invoices: Invoice[];
   onViewInvoice: (invoice: Invoice) => void;
+  onDeleteInvoice?: (invoiceId: string) => void;
 }
 
 const statusVariants: Record<Invoice['status'], 'success' | 'pending' | 'destructive'> = {
@@ -96,7 +97,7 @@ function GuestsCell({ invoice }: { invoice: Invoice }) {
   );
 }
 
-export function InvoiceTable({ invoices, onViewInvoice }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, onViewInvoice, onDeleteInvoice }: InvoiceTableProps) {
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       <Table>
@@ -170,6 +171,16 @@ export function InvoiceTable({ invoices, onViewInvoice }: InvoiceTableProps) {
                   >
                     <Eye className="h-4 w-4" />
                   </Button>
+                  {onDeleteInvoice && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={(e) => { e.stopPropagation(); onDeleteInvoice(invoice.id); }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </TableCell>
             </TableRow>

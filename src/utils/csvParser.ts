@@ -159,35 +159,73 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
     rawRows.push({ row, index: i });
   }
 
-  // If file has a "Type" column (Charge/Tax), aggregate rows by invoice number
-  type AggregatedRow = { row: ParsedRow; indices: number[] };
+  // Helper: extract numeric prefix from invoice number (e.g. "123Charge" → "123", "456Tax" → "456")
+  function extractGroupKey(invoiceNumber: string): string {
+    const match = invoiceNumber.match(/^(\d+)/);
+    return match ? match[1] : invoiceNumber;
+  }
+
+  // Helper: extract type suffix from invoice number (e.g. "123Charge" → "Charge", "456Tax" → "Tax")
+  function extractTypeSuffix(invoiceNumber: string): string {
+    const match = invoiceNumber.match(/^(\d+)(.+)$/);
+    return match ? match[2].trim() : '';
+  }
+
+  // Determine if invoice numbers contain embedded type info (numeric prefix + word suffix)
+  const hasEmbeddedType = !hasLineType && rawRows.some(({ row }) => {
+    const inv = row.invoiceNumber || '';
+    return /^\d+[a-zA-Z]/.test(inv);
+  });
+
+  // Aggregate rows by group key
+  type AggregatedRow = { row: ParsedRow; indices: number[]; lineItems: { type: string; amount: number; description: string; date: string; guest: string; room: string }[] };
   let aggregatedRows: AggregatedRow[];
 
-  if (hasLineType) {
+  if (hasLineType || hasEmbeddedType) {
     const groups = new Map<string, AggregatedRow>();
     for (const { row, index } of rawRows) {
-      const key = row.invoiceNumber?.toLowerCase() || `row-${index}`;
-      if (!groups.has(key)) {
-        // Start with the first row's data as base
-        groups.set(key, { row: { ...row }, indices: [index] });
+      const rawInv = row.invoiceNumber || '';
+
+      // Determine grouping key and line type
+      let groupKey: string;
+      let lineType: string;
+
+      if (hasEmbeddedType) {
+        groupKey = extractGroupKey(rawInv).toLowerCase();
+        lineType = extractTypeSuffix(rawInv).toLowerCase();
       } else {
-        const group = groups.get(key)!;
+        groupKey = rawInv.toLowerCase() || `row-${index}`;
+        lineType = (row.lineType || '').toLowerCase().trim();
+      }
+
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, { row: { ...row, invoiceNumber: hasEmbeddedType ? extractGroupKey(rawInv) : rawInv }, indices: [index], lineItems: [] });
+      } else {
+        const group = groups.get(groupKey)!;
         group.indices.push(index);
-        // Merge: fill in any missing fields from subsequent rows
+        // Merge: fill in any missing non-amount fields from subsequent rows
         for (const [k, v] of Object.entries(row)) {
-          if (k === 'lineType' || k === 'roomRate') continue; // handle separately
+          if (k === 'lineType' || k === 'roomRate' || k === 'invoiceNumber') continue;
           if (!group.row[k] && v) group.row[k] = v;
         }
       }
 
-      const lineType = (row.lineType || '').toLowerCase().trim();
       const amount = parseFloat(row.roomRate) || 0;
-      const group = groups.get(key)!;
+      const group = groups.get(groupKey)!;
+
+      // Store as a line item for proper breakdown
+      group.lineItems.push({
+        type: lineType,
+        amount,
+        description: lineType || 'Charge',
+        date: row.checkInDate || '',
+        guest: row.guestNames || '',
+        room: row.roomNumber || '',
+      });
 
       if (lineType === 'tax') {
         group.row._taxTotal = String((parseFloat(group.row._taxTotal || '0')) + amount);
       } else {
-        // "Charge" or any other type → roomRate
         group.row._chargeTotal = String((parseFloat(group.row._chargeTotal || '0')) + amount);
       }
     }
@@ -202,7 +240,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
       return g;
     });
   } else {
-    aggregatedRows = rawRows.map(r => ({ row: r.row, indices: [r.index] }));
+    aggregatedRows = rawRows.map(r => ({ row: r.row, indices: [r.index], lineItems: [] }));
   }
 
   const existingNumbers = new Set(existingInvoices.map(inv => inv.invoiceNumber.toLowerCase()));
@@ -213,7 +251,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
   let duplicates = 0;
   let missingFields = 0;
 
-  for (const { row, indices } of aggregatedRows) {
+  for (const { row, indices, lineItems: aggregatedLineItems } of aggregatedRows) {
     const issues: ValidationIssue[] = [];
     const rowDisplay = indices[0];
 
@@ -250,6 +288,28 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
     const additionalCharges = parseFloat(row.additionalCharges) || 0;
     const totalAmount = row.totalAmount ? parseFloat(row.totalAmount) : roomRate + taxes + additionalCharges;
 
+    // Build line items from aggregated data
+    const builtLineItems: import('@/types/invoice').InvoiceLineItem[] = aggregatedLineItems.length > 0
+      ? aggregatedLineItems.map((li, idx) => {
+          const isTax = li.type === 'tax';
+          const liType: import('@/types/invoice').LineItemType = isTax ? 'Tax' : 'Charge';
+          const desc = li.type
+            ? li.type.charAt(0).toUpperCase() + li.type.slice(1)
+            : 'Charge';
+          return {
+            id: `import-li-${Date.now()}-${rowDisplay}-${idx}`,
+            date: li.date || row.checkInDate || new Date().toISOString().split('T')[0],
+            type: liType,
+            reference: `${row.invoiceNumber || 'IMP'}-${idx + 1}`,
+            description: desc,
+            guestName: li.guest || guests[0]?.name || '',
+            amount: li.amount,
+            room: li.room || row.roomNumber || '',
+            category: isTax ? 'TAX' as const : 'ROOM' as const,
+          };
+        })
+      : [];
+
     const invoice: Partial<Invoice> = {
       id: `import-${Date.now()}-${rowDisplay}`,
       invoiceNumber: row.invoiceNumber || '',
@@ -266,6 +326,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
       taxes,
       additionalCharges,
       totalAmount,
+      lineItems: builtLineItems,
       status: (validStatuses.includes(row.status?.toLowerCase()) ? row.status.toLowerCase() : 'pending') as Invoice['status'],
       submittedAt: row.submittedAt || new Date().toISOString(),
       notes: row.notes,
