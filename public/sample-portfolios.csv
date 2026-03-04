@@ -1,0 +1,5 @@
+disaster_id,state,primary_guest_name,check_in,check_out,client_id,case_id,booking_reference,authorized_hotel_name,max_rate_per_night,total_assistance_cap,household_size
+123-25,FL,John Smith,2024-12-01,2024-12-05,RC-2024-1001,,BK-GPH-2024-1201,Grand Palace Hotel,150,1000,2
+123-25,FL,Michael Johnson,2024-12-03,2024-12-07,,,BK-OVR-2024-1203,,100,,
+456-24,TX,Sarah Williams,2024-11-28,2024-12-01,RC-2024-2003,CASE-TX-001,BK-MTL-2024-1128,Mountain Lodge,160,800,3
+789-25,CA,Emily Davis,2024-12-04,2024-12-07,,,,,,1500,

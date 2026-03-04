@@ -345,8 +345,6 @@ function CreatePortfolioForm({ onSubmit, onCancel }: { onSubmit: (pf: ClientPort
 
 function ImportPortfoliosButton({ onImport }: { onImport: (portfolios: ClientPortfolio[]) => void }) {
   const { toast } = useToast();
-  const fileInputRef = useState<HTMLInputElement | null>(null);
-
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -356,7 +354,7 @@ function ImportPortfoliosButton({ onImport }: { onImport: (portfolios: ClientPor
       const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
       if (lines.length < 2) { toast({ title: 'Empty file', variant: 'destructive' }); return; }
 
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z_]/g, ''));
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z0-9_]/g, ''));
       const portfolios: ClientPortfolio[] = [];
 
       for (let i = 1; i < lines.length; i++) {
