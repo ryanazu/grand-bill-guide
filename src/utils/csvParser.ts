@@ -89,6 +89,11 @@ const COLUMN_MAP: Record<string, string> = {
   'disaster': 'disasterId',
   'disasterid': 'disasterId',
   'state': 'state',
+  'description': 'description',
+  'category': 'description',
+  'date': 'lineDate',
+  'data': 'lineDate',
+  'transaction date': 'lineDate',
 };
 
 function mapColumnName(header: string): string | null {
