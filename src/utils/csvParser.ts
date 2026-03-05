@@ -337,10 +337,11 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
     // Build line items from aggregated data
     const builtLineItems: import('@/types/invoice').InvoiceLineItem[] = aggregatedLineItems.length > 0
       ? aggregatedLineItems.map((li, idx) => {
-          const isTax = li.type.includes('tax');
+          const category = descriptionToCategory(li.description);
+          const isTax = category === 'TAX';
           const liType: import('@/types/invoice').LineItemType = isTax ? 'Tax' : 'Charge';
-          const desc = li.type
-            ? li.type.charAt(0).toUpperCase() + li.type.slice(1)
+          const desc = li.description
+            ? li.description.charAt(0).toUpperCase() + li.description.slice(1)
             : 'Charge';
           return {
             id: `import-li-${Date.now()}-${rowDisplay}-${idx}`,
@@ -351,7 +352,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
             guestName: li.guest || guests[0]?.name || '',
             amount: li.amount,
             room: li.room || row.roomNumber || '',
-            category: isTax ? 'TAX' as const : 'ROOM' as const,
+            category,
           };
         })
       : [];
