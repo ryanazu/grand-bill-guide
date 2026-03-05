@@ -89,6 +89,11 @@ const COLUMN_MAP: Record<string, string> = {
   'disaster': 'disasterId',
   'disasterid': 'disasterId',
   'state': 'state',
+  'description': 'description',
+  'category': 'description',
+  'date': 'lineDate',
+  'data': 'lineDate',
+  'transaction date': 'lineDate',
 };
 
 function mapColumnName(header: string): string | null {
@@ -178,8 +183,20 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
   });
 
   // Aggregate rows by group key
-  type AggregatedRow = { row: ParsedRow; indices: number[]; lineItems: { type: string; amount: number; description: string; date: string; guest: string; room: string }[] };
+  type AggregatedRow = { row: ParsedRow; indices: number[]; lineItems: { type: string; amount: number; description: string; date: string; guest: string; room: string }[]; dates: string[] };
   let aggregatedRows: AggregatedRow[];
+
+  // Helper: map description text to a ChargeCategory
+  function descriptionToCategory(desc: string): import('@/types/invoice').ChargeCategory {
+    const d = desc.toLowerCase();
+    if (d.includes('tax')) return 'TAX';
+    if (d.includes('pet')) return 'PET';
+    if (d.includes('parking')) return 'PARKING';
+    if (d.includes('room') || d.includes('accommodation') || d.includes('lodging')) return 'ROOM';
+    if (d.includes('adjust') || d.includes('credit') || d.includes('refund')) return 'ADJUSTMENT';
+    if (d.includes('fee') || d.includes('service') || d.includes('resort')) return 'OTHER_FEE';
+    return 'UNKNOWN';
+  }
 
   if (hasLineType || hasEmbeddedType) {
     const groups = new Map<string, AggregatedRow>();
@@ -198,14 +215,17 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
         lineType = (row.lineType || '').toLowerCase().trim();
       }
 
+      // Use description column if available, falling back to lineType / suffix
+      const description = row.description || lineType || 'Charge';
+
       if (!groups.has(groupKey)) {
-        groups.set(groupKey, { row: { ...row, invoiceNumber: hasEmbeddedType ? extractGroupKey(rawInv) : rawInv }, indices: [index], lineItems: [] });
+        groups.set(groupKey, { row: { ...row, invoiceNumber: hasEmbeddedType ? extractGroupKey(rawInv) : rawInv }, indices: [index], lineItems: [], dates: [] });
       } else {
         const group = groups.get(groupKey)!;
         group.indices.push(index);
         // Merge: fill in any missing non-amount fields from subsequent rows
         for (const [k, v] of Object.entries(row)) {
-          if (k === 'lineType' || k === 'roomRate' || k === 'invoiceNumber') continue;
+          if (k === 'lineType' || k === 'roomRate' || k === 'invoiceNumber' || k === 'description' || k === 'lineDate') continue;
           if (!group.row[k] && v) group.row[k] = v;
         }
       }
@@ -213,34 +233,60 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
       const amount = parseFloat(row.roomRate) || 0;
       const group = groups.get(groupKey)!;
 
+      // Collect dates for min/max calculation
+      if (row.lineDate) {
+        group.dates.push(row.lineDate);
+      }
+
+      // Determine category from description
+      const category = descriptionToCategory(description);
+      const isTax = category === 'TAX';
+
       // Store as a line item for proper breakdown
       group.lineItems.push({
         type: lineType,
         amount,
-        description: lineType || 'Charge',
-        date: row.checkInDate || '',
+        description,
+        date: row.lineDate || row.checkInDate || '',
         guest: row.guestNames || '',
         room: row.roomNumber || '',
       });
 
-      if (lineType.includes('tax')) {
+      if (isTax) {
         group.row._taxTotal = String((parseFloat(group.row._taxTotal || '0')) + amount);
       } else {
         group.row._chargeTotal = String((parseFloat(group.row._chargeTotal || '0')) + amount);
       }
     }
 
-    // Finalize aggregated rows
+    // Finalize aggregated rows — derive check-in/check-out from date range
     aggregatedRows = Array.from(groups.values()).map(g => {
       g.row.roomRate = g.row._chargeTotal || '0';
       g.row.taxes = g.row._taxTotal || '0';
       delete g.row._chargeTotal;
       delete g.row._taxTotal;
       delete g.row.lineType;
+
+      // Derive check-in / check-out from collected dates
+      if (g.dates.length > 0) {
+        const parsedDates = g.dates
+          .map(d => new Date(d))
+          .filter(d => !isNaN(d.getTime()))
+          .sort((a, b) => a.getTime() - b.getTime());
+        if (parsedDates.length > 0) {
+          if (!g.row.checkInDate) {
+            g.row.checkInDate = parsedDates[0].toISOString().split('T')[0];
+          }
+          if (!g.row.checkOutDate) {
+            g.row.checkOutDate = parsedDates[parsedDates.length - 1].toISOString().split('T')[0];
+          }
+        }
+      }
+
       return g;
     });
   } else {
-    aggregatedRows = rawRows.map(r => ({ row: r.row, indices: [r.index], lineItems: [] }));
+    aggregatedRows = rawRows.map(r => ({ row: r.row, indices: [r.index], lineItems: [], dates: [] }));
   }
 
   const existingNumbers = new Set(existingInvoices.map(inv => inv.invoiceNumber.toLowerCase()));
@@ -291,10 +337,11 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
     // Build line items from aggregated data
     const builtLineItems: import('@/types/invoice').InvoiceLineItem[] = aggregatedLineItems.length > 0
       ? aggregatedLineItems.map((li, idx) => {
-          const isTax = li.type.includes('tax');
+          const category = descriptionToCategory(li.description);
+          const isTax = category === 'TAX';
           const liType: import('@/types/invoice').LineItemType = isTax ? 'Tax' : 'Charge';
-          const desc = li.type
-            ? li.type.charAt(0).toUpperCase() + li.type.slice(1)
+          const desc = li.description
+            ? li.description.charAt(0).toUpperCase() + li.description.slice(1)
             : 'Charge';
           return {
             id: `import-li-${Date.now()}-${rowDisplay}-${idx}`,
@@ -305,7 +352,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
             guestName: li.guest || guests[0]?.name || '',
             amount: li.amount,
             room: li.room || row.roomNumber || '',
-            category: isTax ? 'TAX' as const : 'ROOM' as const,
+            category,
           };
         })
       : [];
