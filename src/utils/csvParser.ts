@@ -223,7 +223,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
         room: row.roomNumber || '',
       });
 
-      if (lineType === 'tax') {
+      if (lineType.includes('tax')) {
         group.row._taxTotal = String((parseFloat(group.row._taxTotal || '0')) + amount);
       } else {
         group.row._chargeTotal = String((parseFloat(group.row._chargeTotal || '0')) + amount);
@@ -291,7 +291,7 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
     // Build line items from aggregated data
     const builtLineItems: import('@/types/invoice').InvoiceLineItem[] = aggregatedLineItems.length > 0
       ? aggregatedLineItems.map((li, idx) => {
-          const isTax = li.type === 'tax';
+          const isTax = li.type.includes('tax');
           const liType: import('@/types/invoice').LineItemType = isTax ? 'Tax' : 'Charge';
           const desc = li.type
             ? li.type.charAt(0).toUpperCase() + li.type.slice(1)
