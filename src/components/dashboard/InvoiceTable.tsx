@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Eye, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Eye, Trash2 } from 'lucide-react';
 import { Invoice, InvoiceFlag } from '@/types/invoice';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,14 +29,26 @@ const statusLabels: Record<Invoice['status'], string> = {
   overdue: 'Overdue',
 };
 
-const MAX_VISIBLE_FLAGS = 2;
+const SEVERITY_BORDER: Record<string, string> = {
+  critical: 'border-destructive/30',
+  review: 'border-warning/30',
+  info: 'border-info/30',
+};
+
+const SEVERITY_BG: Record<string, string> = {
+  critical: 'bg-destructive/10 text-destructive',
+  review: 'bg-warning/10 text-warning',
+  info: 'bg-info/10 text-info',
+};
 
 function FlagBadge({ flag, tooltip }: { flag: InvoiceFlag; tooltip: string }) {
   const config = FLAG_CONFIG[flag];
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold leading-none whitespace-nowrap ${config.bgClass}`}>
+        <span
+          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold leading-tight whitespace-nowrap tracking-tight ${SEVERITY_BORDER[config.severity]} ${SEVERITY_BG[config.severity]}`}
+        >
           {config.shortLabel}
         </span>
       </TooltipTrigger>
@@ -51,11 +63,11 @@ function FlagsCell({ invoice }: { invoice: Invoice }) {
   const sorted = sortFlagsBySeverity(invoice.flags);
   if (sorted.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
 
-  const visible = sorted.slice(0, MAX_VISIBLE_FLAGS);
-  const overflow = sorted.slice(MAX_VISIBLE_FLAGS);
+  const visible = sorted.slice(0, 3);
+  const overflow = sorted.slice(3);
 
   return (
-    <div className="flex items-center gap-1 max-w-[180px]">
+    <div className="flex flex-wrap items-center gap-1.5">
       {visible.map(flag => (
         <FlagBadge
           key={flag}
@@ -66,11 +78,11 @@ function FlagsCell({ invoice }: { invoice: Invoice }) {
       {overflow.length > 0 && (
         <Popover>
           <PopoverTrigger asChild>
-            <button className="inline-flex items-center rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground hover:bg-muted/80 transition-colors">
+            <button className="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground hover:bg-muted/80 transition-colors">
               +{overflow.length}
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-2 space-y-1" align="start">
+          <PopoverContent className="w-auto p-2 space-y-1.5" align="start">
             {overflow.map(flag => (
               <div key={flag} className="flex items-center gap-2">
                 <FlagBadge flag={flag} tooltip={getFlagTooltip(flag, invoice.flagDetails)} />
@@ -113,7 +125,7 @@ export function InvoiceTable({ invoices, onViewInvoice, onDeleteInvoice }: Invoi
             <TableHead className="font-semibold text-center">Nights</TableHead>
             <TableHead className="font-semibold text-right">Net Total</TableHead>
             <TableHead className="font-semibold">Status</TableHead>
-            <TableHead className="font-semibold">Flags</TableHead>
+            <TableHead className="font-semibold min-w-[180px]">Flags</TableHead>
             <TableHead className="font-semibold text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>

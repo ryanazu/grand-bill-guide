@@ -1,17 +1,16 @@
 import { useState, useMemo, useCallback } from 'react';
-import { FileText, DollarSign, Clock, AlertTriangle, Search, Filter, Settings, Briefcase } from 'lucide-react';
+import { FileText, DollarSign, Clock, AlertTriangle, Search, Filter, Settings, Briefcase, Shield } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { InvoiceTable } from '@/components/dashboard/InvoiceTable';
 import { InvoiceDetail } from '@/components/dashboard/InvoiceDetail';
 import { UploadInvoiceButton } from '@/components/dashboard/UploadInvoiceButton';
 import { ImportReviewDialog } from '@/components/dashboard/ImportReviewDialog';
+import { FlagSettingsDialog } from '@/components/dashboard/FlagSettingsDialog';
 import { DashboardFilters, DashboardFilterValues, EMPTY_FILTERS } from '@/components/dashboard/DashboardFilters';
 import PortfoliosPage from '@/pages/Portfolios';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { mockInvoices } from '@/data/mockInvoices';
 import { mockPortfolios } from '@/data/mockPortfolios';
 import { Invoice, ChargeCategory } from '@/types/invoice';
@@ -22,6 +21,7 @@ import { applyPortfolioMatching } from '@/utils/portfolioMatching';
 import { getFiscalYearFromDisasterId } from '@/constants/usStates';
 import { useSettings } from '@/hooks/useSettings';
 import { toast } from '@/hooks/use-toast';
+import { FlagRule } from '@/types/flagRule';
 
 type ActiveTab = 'invoices' | 'portfolios';
 
@@ -33,6 +33,7 @@ export default function Dashboard() {
   const [portfolios, setPortfolios] = useState<ClientPortfolio[]>(mockPortfolios);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [showFlagSettings, setShowFlagSettings] = useState(false);
   const [filters, setFilters] = useState<DashboardFilterValues>(EMPTY_FILTERS);
   const { settings, updateSettings } = useSettings();
 
@@ -49,15 +50,6 @@ export default function Dashboard() {
   const availableFiscalYears = useMemo(() => {
     const fys = allInvoices.map(i => getFiscalYearFromDisasterId(i.disasterId)).filter(Boolean) as string[];
     return [...new Set(fys)].sort();
-  }, [allInvoices]);
-
-  const stats = useMemo(() => {
-    const total = allInvoices.length;
-    const totalNet = allInvoices.reduce((sum, inv) => sum + inv.netTotal, 0);
-    const pending = allInvoices.filter(inv => inv.status === 'pending').length;
-    const overdue = allInvoices.filter(inv => inv.status === 'overdue').length;
-    const flagged = allInvoices.filter(inv => inv.flags.length > 0).length;
-    return { total, totalNet, pending, overdue, flagged };
   }, [allInvoices]);
 
   const filteredInvoices = useMemo(() => {
@@ -85,6 +77,20 @@ export default function Dashboard() {
     return result;
   }, [searchQuery, allInvoices, filters]);
 
+  // Stats now computed from filtered invoices
+  const stats = useMemo(() => {
+    const total = filteredInvoices.length;
+    const totalNet = filteredInvoices.reduce((sum, inv) => sum + inv.netTotal, 0);
+    const pending = filteredInvoices.filter(inv => inv.status === 'pending').length;
+    const overdue = filteredInvoices.filter(inv => inv.status === 'overdue').length;
+    const flagged = filteredInvoices.filter(inv => inv.flags.length > 0).length;
+    return { total, totalNet, pending, overdue, flagged };
+  }, [filteredInvoices]);
+
+  const hasActiveFilters = useMemo(() => {
+    return searchQuery.trim() !== '' || Object.values(filters).some(v => v !== '');
+  }, [searchQuery, filters]);
+
   const handleImportConfirm = (invoices: Invoice[]) => {
     setImportedInvoices(prev => [...prev, ...invoices]);
     setParseResult(null);
@@ -109,13 +115,11 @@ export default function Dashboard() {
     setImportedInvoices(prev => prev.map(inv =>
       inv.id === invoiceId ? { ...inv, portfolioId, portfolioMatchStatus: 'MATCHED' as const, portfolioMatchMethod: 'MANUAL' as const } : inv
     ));
-    // Also update the selected invoice if viewing it
     setSelectedInvoice(prev => prev && prev.id === invoiceId ? { ...prev, portfolioId, portfolioMatchStatus: 'MATCHED' as const, portfolioMatchMethod: 'MANUAL' as const } : prev);
     toast({ title: 'Portfolio linked' });
   }, []);
 
   const handleConfirmMatch = useCallback((invoiceId: string) => {
-    // Promote POSSIBLE_MATCH to MATCHED with MANUAL method
     setImportedInvoices(prev => prev.map(inv =>
       inv.id === invoiceId ? { ...inv, portfolioMatchStatus: 'MATCHED' as const, portfolioMatchMethod: 'MANUAL' as const } : inv
     ));
@@ -130,6 +134,11 @@ export default function Dashboard() {
     setSelectedInvoice(prev => prev && prev.id === invoiceId ? { ...prev, portfolioId: null, portfolioMatchStatus: 'UNMATCHED' as const, portfolioMatchMethod: undefined } : prev);
     toast({ title: 'Match rejected' });
   }, []);
+
+  const handleSaveFlagRules = useCallback((rules: FlagRule[]) => {
+    updateSettings({ flagRules: rules });
+    toast({ title: 'Flag rules updated' });
+  }, [updateSettings]);
 
   // Portfolio aggregation
   const invoiceCounts = useMemo(() => {
@@ -161,28 +170,11 @@ export default function Dashboard() {
             <h1 className="font-display text-3xl font-bold text-foreground">Invoice Dashboard</h1>
             <p className="text-muted-foreground mt-1">Monitor and manage hotel booking invoices</p>
           </div>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="icon">
-                <Settings className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-72" align="end">
-              <div className="space-y-3">
-                <h4 className="font-medium text-sm text-foreground">Settings</h4>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Max Rate Per Night ($)</Label>
-                  <Input
-                    type="number"
-                    className="h-8 text-sm"
-                    value={settings.maxRatePerNight}
-                    onChange={e => updateSettings({ maxRatePerNight: parseFloat(e.target.value) || 200 })}
-                  />
-                  <p className="text-[10px] text-muted-foreground">Invoices exceeding this rate will be flagged.</p>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
+          <div className="flex gap-2">
+            <Button variant="outline" size="icon" onClick={() => setShowFlagSettings(true)} title="Flag Rules">
+              <Shield className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {/* Tab Nav */}
@@ -209,13 +201,13 @@ export default function Dashboard() {
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div className="animate-slide-up" style={{ animationDelay: '0ms' }}>
-                <StatsCard title="Total Invoices" value={stats.total} subtitle="All time" icon={FileText} />
+                <StatsCard title="Total Invoices" value={stats.total} subtitle={hasActiveFilters ? 'Filtered' : 'All time'} icon={FileText} />
               </div>
               <div className="animate-slide-up" style={{ animationDelay: '50ms' }}>
                 <StatsCard
                   title="Net Spend"
                   value={`$${stats.totalNet.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-                  subtitle="All invoices"
+                  subtitle={hasActiveFilters ? 'Filtered' : 'All invoices'}
                   icon={DollarSign}
                   variant="success"
                 />
@@ -247,7 +239,10 @@ export default function Dashboard() {
             {/* Invoices Section */}
             <div className="space-y-4 animate-slide-up" style={{ animationDelay: '250ms' }}>
               <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                <h2 className="font-display text-xl font-semibold text-foreground">Recent Invoices</h2>
+                <h2 className="font-display text-xl font-semibold text-foreground">
+                  Recent Invoices
+                  {hasActiveFilters && <span className="text-sm font-normal text-muted-foreground ml-2">({filteredInvoices.length} of {allInvoices.length})</span>}
+                </h2>
                 <div className="flex gap-2 w-full sm:w-auto">
                   <div className="relative flex-1 sm:flex-initial">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -305,6 +300,14 @@ export default function Dashboard() {
           result={parseResult}
           onConfirm={handleImportConfirm}
           onCancel={() => setParseResult(null)}
+        />
+      )}
+
+      {showFlagSettings && (
+        <FlagSettingsDialog
+          rules={settings.flagRules}
+          onSave={handleSaveFlagRules}
+          onClose={() => setShowFlagSettings(false)}
         />
       )}
     </div>
