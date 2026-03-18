@@ -19,6 +19,7 @@ interface PortfoliosPageProps {
   portfolios: ClientPortfolio[];
   onAddPortfolio: (portfolio: ClientPortfolio) => void;
   onImportPortfolios: (portfolios: ClientPortfolio[]) => void;
+  onDeletePortfolio: (portfolioId: string) => void;
   invoiceCounts: Record<string, number>;
   invoiceFlagCounts: Record<string, number>;
   invoiceSpend: Record<string, number>;
@@ -27,7 +28,7 @@ interface PortfoliosPageProps {
 
 const ALL_CATEGORIES: ChargeCategory[] = ['ROOM', 'TAX', 'PET', 'PARKING', 'OTHER_FEE', 'ADJUSTMENT', 'UNKNOWN'];
 
-export default function PortfoliosPage({ portfolios, onAddPortfolio, onImportPortfolios, invoiceCounts, invoiceFlagCounts, invoiceSpend, onViewPortfolio }: PortfoliosPageProps) {
+export default function PortfoliosPage({ portfolios, onAddPortfolio, onImportPortfolios, onDeletePortfolio, invoiceCounts, invoiceFlagCounts, invoiceSpend, onViewPortfolio }: PortfoliosPageProps) {
   const [showForm, setShowForm] = useState(false);
   const [selectedPortfolio, setSelectedPortfolio] = useState<ClientPortfolio | null>(null);
   const { toast } = useToast();
@@ -69,18 +70,20 @@ export default function PortfoliosPage({ portfolios, onAddPortfolio, onImportPor
           invoiceFlagCounts={invoiceFlagCounts}
           invoiceSpend={invoiceSpend}
           onSelect={setSelectedPortfolio}
+          onDelete={onDeletePortfolio}
         />
       )}
     </div>
   );
 }
 
-function PortfolioListTable({ portfolios, invoiceCounts, invoiceFlagCounts, invoiceSpend, onSelect }: {
+function PortfolioListTable({ portfolios, invoiceCounts, invoiceFlagCounts, invoiceSpend, onSelect, onDelete }: {
   portfolios: ClientPortfolio[];
   invoiceCounts: Record<string, number>;
   invoiceFlagCounts: Record<string, number>;
   invoiceSpend: Record<string, number>;
   onSelect: (p: ClientPortfolio) => void;
+  onDelete: (portfolioId: string) => void;
 }) {
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -95,12 +98,13 @@ function PortfolioListTable({ portfolios, invoiceCounts, invoiceFlagCounts, invo
             <th className="text-right font-semibold px-4 py-3">Max Rate</th>
             <th className="text-center font-semibold px-4 py-3">Invoices</th>
             <th className="text-right font-semibold px-4 py-3">Total Spend</th>
+            <th className="text-right font-semibold px-4 py-3">Flags</th>
             <th className="text-right font-semibold px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
           {portfolios.map(p => (
-            <tr key={p.portfolioId} className="border-b border-border hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => onSelect(p)}>
+            <tr key={p.portfolioId} className="group border-b border-border hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => onSelect(p)}>
               <td className="px-4 py-3 font-mono text-xs text-foreground">{p.portfolioId}</td>
               <td className="px-4 py-3 font-medium text-foreground">{p.primaryGuestName}</td>
               <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{p.disasterId}</td>
@@ -126,10 +130,20 @@ function PortfolioListTable({ portfolios, invoiceCounts, invoiceFlagCounts, invo
                   </Badge>
                 )}
               </td>
+              <td className="px-4 py-3 text-right">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => { e.stopPropagation(); onDelete(p.portfolioId); }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </td>
             </tr>
           ))}
           {portfolios.length === 0 && (
-            <tr><td colSpan={9} className="text-center py-12 text-muted-foreground">No portfolios yet. Create one or import from CSV.</td></tr>
+            <tr><td colSpan={10} className="text-center py-12 text-muted-foreground">No portfolios yet. Create one or import from CSV.</td></tr>
           )}
         </tbody>
       </table>

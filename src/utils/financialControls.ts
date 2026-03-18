@@ -1,4 +1,5 @@
 import { Invoice, InvoiceLineItem, InvoiceFlag, InvoiceFlagDetail, ChargeCategory, OffsetPair } from '@/types/invoice';
+import { FlagRule } from '@/types/flagRule';
 import { differenceInDays } from 'date-fns';
 
 // ─── Category Normalization ─────────────────────────────────────────────────
@@ -22,7 +23,6 @@ export function normalizeCategory(description: string, type: string): ChargeCate
   if (desc.includes('parking')) {
     return 'PARKING';
   }
-  // If it's a charge that's clearly a fee
   if (t === 'charge' && (desc.includes('fee') || desc.includes('service') || desc.includes('resort') || desc.includes('internet') || desc.includes('minibar') || desc.includes('laundry'))) {
     return 'OTHER_FEE';
   }
@@ -53,7 +53,6 @@ export function detectOffsetPairs(lineItems: InvoiceLineItem[]): OffsetPair[] {
       const a = lineItems[i];
       const b = lineItems[j];
 
-      // Same reference, guest, description, absolute amount, opposite signs
       if (
         a.reference === b.reference &&
         a.guestName === b.guestName &&
@@ -90,7 +89,8 @@ export function computeInvoiceTotals(lineItems: InvoiceLineItem[], nights: numbe
   const offsetIds = new Set(offsetPairs.flatMap(p => [p.positive.id, p.negative.id]));
   const netTotal = lineItems.filter(li => !offsetIds.has(li.id)).reduce((s, li) => s + li.amount, 0);
 
-  const ratePerNight = nights > 0 && roomSubtotal > 0 ? roomSubtotal / nights : 0;
+  // Rate per night is based on net total per user request
+  const ratePerNight = nights > 0 && netTotal > 0 ? netTotal / nights : 0;
 
   return { roomSubtotal, taxSubtotal, feesSubtotal, adjustmentsSubtotal, grossTotal, netTotal, ratePerNight };
 }
@@ -128,12 +128,11 @@ function hasGuestOverlap(a: { name: string }[], b: { name: string }[]): boolean 
   return b.some(g => namesA.has(g.name.toLowerCase()));
 }
 
-// ─── Apply Flags ────────────────────────────────────────────────────────────
+// ─── Apply Flags (uses user-defined FlagRules) ──────────────────────────────
 
-export function applyFlags(invoices: Invoice[], maxRatePerNight: number): Invoice[] {
+export function applyFlags(invoices: Invoice[], maxRatePerNight: number, flagRules?: FlagRule[]): Invoice[] {
+  // Pre-compute duplicates
   const duplicateIds = detectDuplicates(invoices);
-
-  // Build duplicate pairs for tooltip text
   const duplicatePairs: Record<string, string[]> = {};
   for (let i = 0; i < invoices.length; i++) {
     for (let j = i + 1; j < invoices.length; j++) {
@@ -150,39 +149,119 @@ export function applyFlags(invoices: Invoice[], maxRatePerNight: number): Invoic
     }
   }
 
+  // If no rules provided, use legacy hardcoded behavior
+  if (!flagRules || flagRules.length === 0) {
+    return invoices.map(inv => {
+      const flags: InvoiceFlag[] = [];
+      const flagDetails: InvoiceFlagDetail[] = [];
+
+      if (duplicateIds.has(inv.id)) {
+        flags.push('DUPLICATE_SUSPECTED');
+        const matches = duplicatePairs[inv.id] || [];
+        flagDetails.push({ flag: 'DUPLICATE_SUSPECTED', severity: 'critical', tooltip: `Duplicate match: ${matches.join(', ') || 'detected'}` });
+      }
+
+      const offsetPairs = detectOffsetPairs(inv.lineItems);
+      if (offsetPairs.length > 0) {
+        flags.push('OFFSETS_PRESENT');
+        flagDetails.push({ flag: 'OFFSETS_PRESENT', severity: 'info', tooltip: `Offsets: ${offsetPairs.length} pair${offsetPairs.length !== 1 ? 's' : ''} net to $0` });
+      }
+
+      if (inv.ratePerNight > maxRatePerNight && inv.ratePerNight > 0) {
+        flags.push('OVER_MAX_NIGHTLY_RATE');
+        flagDetails.push({ flag: 'OVER_MAX_NIGHTLY_RATE', severity: 'critical', tooltip: `Rate: $${inv.ratePerNight.toFixed(0)} > $${maxRatePerNight}` });
+      }
+
+      return { ...inv, flags, flagDetails };
+    });
+  }
+
+  // Apply user-defined flag rules
+  const enabledRules = flagRules.filter(r => r.enabled);
+
   return invoices.map(inv => {
     const flags: InvoiceFlag[] = [];
     const flagDetails: InvoiceFlagDetail[] = [];
 
-    if (duplicateIds.has(inv.id)) {
-      flags.push('DUPLICATE_SUSPECTED');
-      const matches = duplicatePairs[inv.id] || [];
-      flagDetails.push({
-        flag: 'DUPLICATE_SUSPECTED',
-        severity: 'critical',
-        tooltip: `Duplicate match: ${matches.join(', ') || 'detected'}`,
-      });
-    }
+    for (const rule of enabledRules) {
+      let triggered = false;
+      let tooltip = rule.name;
 
-    const offsetPairs = detectOffsetPairs(inv.lineItems);
-    if (offsetPairs.length > 0) {
-      flags.push('OFFSETS_PRESENT');
-      flagDetails.push({
-        flag: 'OFFSETS_PRESENT',
-        severity: 'info',
-        tooltip: `Offsets: ${offsetPairs.length} pair${offsetPairs.length !== 1 ? 's' : ''} net to $0`,
-      });
-    }
+      switch (rule.conditionType) {
+        case 'duplicate_charges':
+          if (duplicateIds.has(inv.id)) {
+            triggered = true;
+            const matches = duplicatePairs[inv.id] || [];
+            tooltip = `Duplicate match: ${matches.join(', ') || 'detected'}`;
+          }
+          break;
 
-    if (inv.ratePerNight > maxRatePerNight && inv.ratePerNight > 0) {
-      flags.push('OVER_MAX_NIGHTLY_RATE');
-      flagDetails.push({
-        flag: 'OVER_MAX_NIGHTLY_RATE',
-        severity: 'critical',
-        tooltip: `Rate: $${inv.ratePerNight.toFixed(0)} > $${maxRatePerNight}`,
-      });
+        case 'rate_exceeds_threshold': {
+          const threshold = rule.threshold ?? maxRatePerNight;
+          if (inv.ratePerNight > threshold && inv.ratePerNight > 0) {
+            triggered = true;
+            tooltip = `Rate: $${inv.ratePerNight.toFixed(0)}/night > $${threshold} threshold`;
+          }
+          break;
+        }
+
+        case 'offset_pairs': {
+          const offsetPairs = detectOffsetPairs(inv.lineItems);
+          if (offsetPairs.length > 0) {
+            triggered = true;
+            tooltip = `Offsets: ${offsetPairs.length} pair${offsetPairs.length !== 1 ? 's' : ''} net to $0`;
+          }
+          break;
+        }
+
+        case 'category_present': {
+          const cats = rule.categories || [];
+          const found = cats.filter(cat => inv.lineItems.some(li => li.category === cat));
+          if (found.length > 0) {
+            triggered = true;
+            tooltip = `Contains: ${found.join(', ')}`;
+          }
+          break;
+        }
+
+        case 'custom_keyword': {
+          const keywords = rule.keywords || [];
+          const matchedKw = keywords.filter(kw =>
+            inv.lineItems.some(li => li.description.toLowerCase().includes(kw.toLowerCase()))
+          );
+          if (matchedKw.length > 0) {
+            triggered = true;
+            tooltip = `Keyword match: ${matchedKw.join(', ')}`;
+          }
+          break;
+        }
+      }
+
+      if (triggered) {
+        // Map rule to closest InvoiceFlag enum value
+        const flagType = mapRuleToFlag(rule);
+        if (!flags.includes(flagType)) {
+          flags.push(flagType);
+        }
+        flagDetails.push({ flag: flagType, severity: rule.severity, tooltip });
+      }
     }
 
     return { ...inv, flags, flagDetails };
   });
+}
+
+function mapRuleToFlag(rule: FlagRule): InvoiceFlag {
+  switch (rule.conditionType) {
+    case 'duplicate_charges': return 'DUPLICATE_SUSPECTED';
+    case 'rate_exceeds_threshold': return 'OVER_MAX_NIGHTLY_RATE';
+    case 'offset_pairs': return 'OFFSETS_PRESENT';
+    case 'category_present': {
+      const cats = rule.categories || [];
+      if (cats.includes('PET') || cats.includes('PARKING')) return 'DISALLOWED_CHARGE_CATEGORY';
+      return 'DISALLOWED_CHARGE_CATEGORY';
+    }
+    case 'custom_keyword': return 'DISALLOWED_CHARGE_CATEGORY';
+    default: return 'DISALLOWED_CHARGE_CATEGORY';
+  }
 }

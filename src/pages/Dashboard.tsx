@@ -40,7 +40,7 @@ export default function Dashboard() {
   // Merge, flag, then portfolio-match
   const allInvoices = useMemo(() => {
     const merged = [...mockInvoices, ...importedInvoices];
-    const flagged = applyFlags(merged, settings.maxRatePerNight);
+    const flagged = applyFlags(merged, settings.maxRatePerNight, settings.flagRules);
     return applyPortfolioMatching(flagged, portfolios, settings.maxRatePerNight);
   }, [importedInvoices, settings.maxRatePerNight, portfolios]);
 
@@ -109,6 +109,11 @@ export default function Dashboard() {
 
   const handleImportPortfolios = useCallback((pfs: ClientPortfolio[]) => {
     setPortfolios(prev => [...prev, ...pfs]);
+  }, []);
+
+  const handleDeletePortfolio = useCallback((portfolioId: string) => {
+    setPortfolios(prev => prev.filter(p => p.portfolioId !== portfolioId));
+    toast({ title: 'Portfolio deleted' });
   }, []);
 
   const handleLinkPortfolio = useCallback((invoiceId: string, portfolioId: string) => {
@@ -275,6 +280,7 @@ export default function Dashboard() {
             portfolios={portfolios}
             onAddPortfolio={handleAddPortfolio}
             onImportPortfolios={handleImportPortfolios}
+            onDeletePortfolio={handleDeletePortfolio}
             invoiceCounts={invoiceCounts}
             invoiceFlagCounts={invoiceFlagCounts}
             invoiceSpend={invoiceSpend}
