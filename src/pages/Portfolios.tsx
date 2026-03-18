@@ -143,7 +143,7 @@ function PortfolioListTable({ portfolios, invoiceCounts, invoiceFlagCounts, invo
             </tr>
           ))}
           {portfolios.length === 0 && (
-            <tr><td colSpan={9} className="text-center py-12 text-muted-foreground">No portfolios yet. Create one or import from CSV.</td></tr>
+            <tr><td colSpan={10} className="text-center py-12 text-muted-foreground">No portfolios yet. Create one or import from CSV.</td></tr>
           )}
         </tbody>
       </table>
