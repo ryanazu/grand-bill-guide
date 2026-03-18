@@ -70,6 +70,7 @@ export default function PortfoliosPage({ portfolios, onAddPortfolio, onImportPor
           invoiceFlagCounts={invoiceFlagCounts}
           invoiceSpend={invoiceSpend}
           onSelect={setSelectedPortfolio}
+          onDelete={onDeletePortfolio}
         />
       )}
     </div>
