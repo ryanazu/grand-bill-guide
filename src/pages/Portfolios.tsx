@@ -28,7 +28,7 @@ interface PortfoliosPageProps {
 
 const ALL_CATEGORIES: ChargeCategory[] = ['ROOM', 'TAX', 'PET', 'PARKING', 'OTHER_FEE', 'ADJUSTMENT', 'UNKNOWN'];
 
-export default function PortfoliosPage({ portfolios, onAddPortfolio, onImportPortfolios, invoiceCounts, invoiceFlagCounts, invoiceSpend, onViewPortfolio }: PortfoliosPageProps) {
+export default function PortfoliosPage({ portfolios, onAddPortfolio, onImportPortfolios, onDeletePortfolio, invoiceCounts, invoiceFlagCounts, invoiceSpend, onViewPortfolio }: PortfoliosPageProps) {
   const [showForm, setShowForm] = useState(false);
   const [selectedPortfolio, setSelectedPortfolio] = useState<ClientPortfolio | null>(null);
   const { toast } = useToast();
