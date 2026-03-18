@@ -111,6 +111,11 @@ export default function Dashboard() {
     setPortfolios(prev => [...prev, ...pfs]);
   }, []);
 
+  const handleDeletePortfolio = useCallback((portfolioId: string) => {
+    setPortfolios(prev => prev.filter(p => p.portfolioId !== portfolioId));
+    toast({ title: 'Portfolio deleted' });
+  }, []);
+
   const handleLinkPortfolio = useCallback((invoiceId: string, portfolioId: string) => {
     setImportedInvoices(prev => prev.map(inv =>
       inv.id === invoiceId ? { ...inv, portfolioId, portfolioMatchStatus: 'MATCHED' as const, portfolioMatchMethod: 'MANUAL' as const } : inv
