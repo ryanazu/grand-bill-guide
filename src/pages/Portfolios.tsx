@@ -77,12 +77,13 @@ export default function PortfoliosPage({ portfolios, onAddPortfolio, onImportPor
   );
 }
 
-function PortfolioListTable({ portfolios, invoiceCounts, invoiceFlagCounts, invoiceSpend, onSelect }: {
+function PortfolioListTable({ portfolios, invoiceCounts, invoiceFlagCounts, invoiceSpend, onSelect, onDelete }: {
   portfolios: ClientPortfolio[];
   invoiceCounts: Record<string, number>;
   invoiceFlagCounts: Record<string, number>;
   invoiceSpend: Record<string, number>;
   onSelect: (p: ClientPortfolio) => void;
+  onDelete: (portfolioId: string) => void;
 }) {
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
