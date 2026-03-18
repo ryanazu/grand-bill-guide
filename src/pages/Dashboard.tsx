@@ -40,7 +40,7 @@ export default function Dashboard() {
   // Merge, flag, then portfolio-match
   const allInvoices = useMemo(() => {
     const merged = [...mockInvoices, ...importedInvoices];
-    const flagged = applyFlags(merged, settings.maxRatePerNight);
+    const flagged = applyFlags(merged, settings.maxRatePerNight, settings.flagRules);
     return applyPortfolioMatching(flagged, portfolios, settings.maxRatePerNight);
   }, [importedInvoices, settings.maxRatePerNight, portfolios]);
 

@@ -56,10 +56,12 @@ export function ImportReviewDialog({ result, onConfirm, onCancel }: ImportReview
         const lineItems = e.invoice.lineItems || [];
         const roomSubtotal = lineItems.filter(li => li.category === 'ROOM').reduce((s, li) => s + li.amount, 0) || (e.invoice.roomRate || 0);
         const taxSubtotal = lineItems.filter(li => li.category === 'TAX').reduce((s, li) => s + li.amount, 0) || (e.invoice.taxes || 0);
-        const feesSubtotal = e.invoice.additionalCharges || 0;
-        const grossTotal = roomSubtotal + taxSubtotal + feesSubtotal;
+        const feesSubtotal = lineItems.filter(li => ['PET', 'PARKING', 'OTHER_FEE', 'UNKNOWN'].includes(li.category)).reduce((s, li) => s + li.amount, 0) || (e.invoice.additionalCharges || 0);
+        const adjustmentsSubtotal = lineItems.filter(li => li.category === 'ADJUSTMENT').reduce((s, li) => s + li.amount, 0);
+        const grossTotal = roomSubtotal + taxSubtotal + feesSubtotal + adjustmentsSubtotal;
         const netTotal = grossTotal;
-        const ratePerNight = nights > 0 && roomSubtotal > 0 ? roomSubtotal / nights : 0;
+        // Rate per night based on net total
+        const ratePerNight = nights > 0 && netTotal > 0 ? netTotal / nights : 0;
 
         return {
           ...e.invoice,
