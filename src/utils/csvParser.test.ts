@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseCSV } from '@/utils/csvParser';
 import { mockInvoices } from '@/data/mockInvoices';
-import fs from 'fs';
-import path from 'path';
 
 const sampleCSV = `Invoice #,Hotel Name,Hotel ID,Room,Check-in,Check-out,Guest Names,Guest Emails,Guest Phones,# Guests,Room Rate,Taxes,Additional,Total,Status,Payment,Booking Ref,Submitted,Notes
 INV-2024-010,Riverside Inn,RVI010,204,2024-12-10,2024-12-14,Alice Monroe;Bob Monroe,alice@email.com;bob@email.com,+1 555-1010;+1 555-1011,2,380.00,57.00,45.00,482.00,paid,Credit Card,BK-RVI-2024-1210,2024-12-14T11:00:00Z,Anniversary trip

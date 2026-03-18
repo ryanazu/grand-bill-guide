@@ -346,7 +346,9 @@ export function parseCSV(content: string, existingInvoices: Invoice[]): ParseRes
             g.row.checkInDate = parsedDates[0].toISOString().split('T')[0];
           }
           if (!g.row.checkOutDate) {
-            g.row.checkOutDate = parsedDates[parsedDates.length - 1].toISOString().split('T')[0];
+            const lastChargeDate = new Date(parsedDates[parsedDates.length - 1]);
+            lastChargeDate.setUTCDate(lastChargeDate.getUTCDate() + 1);
+            g.row.checkOutDate = lastChargeDate.toISOString().split('T')[0];
           }
         }
       }
