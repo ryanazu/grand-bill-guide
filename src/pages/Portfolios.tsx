@@ -130,6 +130,16 @@ function PortfolioListTable({ portfolios, invoiceCounts, invoiceFlagCounts, invo
                   </Badge>
                 )}
               </td>
+              <td className="px-4 py-3 text-right">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => { e.stopPropagation(); onDelete(p.portfolioId); }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </td>
             </tr>
           ))}
           {portfolios.length === 0 && (
