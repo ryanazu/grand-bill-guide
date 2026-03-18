@@ -98,6 +98,7 @@ function PortfolioListTable({ portfolios, invoiceCounts, invoiceFlagCounts, invo
             <th className="text-right font-semibold px-4 py-3">Max Rate</th>
             <th className="text-center font-semibold px-4 py-3">Invoices</th>
             <th className="text-right font-semibold px-4 py-3">Total Spend</th>
+            <th className="text-right font-semibold px-4 py-3">Flags</th>
             <th className="text-right font-semibold px-4 py-3"></th>
           </tr>
         </thead>
