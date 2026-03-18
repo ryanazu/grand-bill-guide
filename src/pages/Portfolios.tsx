@@ -104,7 +104,7 @@ function PortfolioListTable({ portfolios, invoiceCounts, invoiceFlagCounts, invo
         </thead>
         <tbody>
           {portfolios.map(p => (
-            <tr key={p.portfolioId} className="border-b border-border hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => onSelect(p)}>
+            <tr key={p.portfolioId} className="group border-b border-border hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => onSelect(p)}>
               <td className="px-4 py-3 font-mono text-xs text-foreground">{p.portfolioId}</td>
               <td className="px-4 py-3 font-medium text-foreground">{p.primaryGuestName}</td>
               <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{p.disasterId}</td>
