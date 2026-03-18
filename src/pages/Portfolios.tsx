@@ -19,6 +19,7 @@ interface PortfoliosPageProps {
   portfolios: ClientPortfolio[];
   onAddPortfolio: (portfolio: ClientPortfolio) => void;
   onImportPortfolios: (portfolios: ClientPortfolio[]) => void;
+  onDeletePortfolio: (portfolioId: string) => void;
   invoiceCounts: Record<string, number>;
   invoiceFlagCounts: Record<string, number>;
   invoiceSpend: Record<string, number>;
