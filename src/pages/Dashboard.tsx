@@ -42,7 +42,7 @@ export default function Dashboard() {
     const merged = [...mockInvoices, ...importedInvoices];
     const flagged = applyFlags(merged, settings.maxRatePerNight, settings.flagRules);
     return applyPortfolioMatching(flagged, portfolios, settings.maxRatePerNight);
-  }, [importedInvoices, settings.maxRatePerNight, portfolios]);
+  }, [importedInvoices, portfolios, settings.maxRatePerNight, settings.flagRules]);
 
   // Derive filter values
   const availableDisasterIds = useMemo(() => [...new Set(allInvoices.map(i => i.disasterId))].sort(), [allInvoices]);
