@@ -280,6 +280,7 @@ export default function Dashboard() {
             portfolios={portfolios}
             onAddPortfolio={handleAddPortfolio}
             onImportPortfolios={handleImportPortfolios}
+            onDeletePortfolio={handleDeletePortfolio}
             invoiceCounts={invoiceCounts}
             invoiceFlagCounts={invoiceFlagCounts}
             invoiceSpend={invoiceSpend}
